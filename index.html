@@ -2,56 +2,222 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <!-- 禁止缩放，防止 Safari 地址栏抖动 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>狼族传说 🐺</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            /* 防止长按出现菜单 */
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-            user-select: none;
-        }
-        body {
-            background: #0a0a0a;
-            overflow: hidden; /* 禁止滚动条 */
-            touch-action: none; /* 禁止触摸滚动 */
-        }
-        canvas {
-            display: block; /* 去除底部白边 */
-            background: #0a0a0a;
-        }
-        /* 左上角分数面板 */
-        #scorePanel {
-            position: fixed;
-            top: 15px;
-            left: 15px;
-            color: #ffd700;
-            font-size: 18px;
-            font-weight: bold;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
-            z-index: 100;
-            pointer-events: none; /* 让点击穿透到canvas */
-        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:#0a0a0a; overflow:hidden; touch-action:none; }
+        canvas { display:block; }
+        #score { position:fixed; top:15px; left:15px; color:#ffd700; font-size:18px; font-weight:bold; z-index:100; }
     </style>
 </head>
 <body>
-    <div id="scorePanel">狼群：0 | 骨头：0</div>
+    <div id="score">狼群：0 | 骨头：0</div>
     <canvas id="game"></canvas>
 
-    <!-- 
-        🚨 重点来了：type="module"
-        因为你的代码里用了 import/export，
-        必须加这个属性，否则 JS 不会执行！
-        另外加了 ?v=4 防止 iPad 缓存。
-    -->
-    <script type="module" src="config.js?v=4"></script>
-    <script type="module" src="utils.js?v=4"></script>
-    <script type="module" src="entities.js?v=4"></script>
-    <script type="module" src="game.js?v=4"></script>
+    <script>
+        // ==================== 配置（所有可调参数都在这里）====================
+        const CONFIG = {
+            GRAVITY: 0.18,          // 重力：越大掉越快
+            BOUNCE_POWER: 0.7,      // 弹跳力度
+            MIN_BOUNCE_Y: -10,      // 最小弹跳高度（越负跳越高）
+            MAX_BOUNCE_Y: -3,       // 最大弹跳高度
+            MIN_DX: 1, MAX_DX: 4,   // 水平速度范围
+            WOLF_SIZE: 80,          // 狼的大小
+            BONE_SIZE: 40,          // 骨头大小
+            MAX_WOLVES: 20,         // 最多20只狼（防卡）
+            WOLF_LIFETIME: 15000,   // 狼存活15秒
+            PARTICLE_COUNT: 12,     // 粒子数量
+            USE_EMOJI: true,
+            WOLF_EMOJI: '🐺', DOG_EMOJI: '🐶', BONE_EMOJI: '🦴'
+        };
+
+        // ==================== 工具函数 ====================
+        const random = (min, max) => Math.random() * (max - min) + min;
+        const isCollide = (a, b, s1, s2) => 
+            a.x < b.x + s2 && a.x + s1 > b.x && a.y < b.y + s2 && a.y + s1 > b.y;
+
+        // 粒子系统
+        const particles = [];
+        const spawnParticles = (x, y, color) => {
+            for (let i=0; i<CONFIG.PARTICLE_COUNT; i++) {
+                const angle = random(0, Math.PI*2);
+                const speed = random(1,3);
+                particles.push({
+                    x,y, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed,
+                    life:0.5, size:random(2,4), color
+                });
+            }
+        };
+        const updateParticles = (dt) => {
+            for (let i=particles.length-1; i>=0; i--) {
+                const p = particles[i];
+                p.life -= dt;
+                if (p.life <=0) { particles.splice(i,1); continue; }
+                p.x+=p.vx; p.y+=p.vy; p.vx*=0.95; p.vy*=0.95;
+            }
+        };
+        const drawParticles = (ctx) => {
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life/0.5;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+        };
+
+        // ==================== 实体管理 ====================
+        const wolves = [], bones = [];
+        let wolvesCount=0, bonesCount=0;
+
+        // 创建狼（从点击位置生成）
+        const createWolf = (x,y) => {
+            if (wolves.length >= CONFIG.MAX_WOLVES) return;
+            wolves.push({
+                x: x-CONFIG.WOLF_SIZE/2, y: y-CONFIG.WOLF_SIZE/2,
+                dx: random(-1,1), dy: random(0.5,1.5),
+                type: 'wolf', bornTime: Date.now()
+            });
+            wolvesCount++;
+        };
+
+        // 创建骨头
+        const createBone = (x,y) => {
+            bones.push({ x:x-CONFIG.BONE_SIZE/2, y:y-CONFIG.BONE_SIZE/2 });
+            bonesCount++;
+        };
+
+        // 自动生成骨头
+        let lastBoneSpawn = 0;
+        const autoSpawnBone = (w,h,now) => {
+            if (now - lastBoneSpawn > 2000) { // 每2秒一个
+                createBone(random(CONFIG.BONE_SIZE,w-CONFIG.BONE_SIZE), random(CONFIG.BONE_SIZE,h-CONFIG.BONE_SIZE));
+                lastBoneSpawn = now;
+            }
+        };
+
+        // 更新实体
+        const updateEntities = (w,h,dt,now) => {
+            // 更新狼
+            for (let i=wolves.length-1; i>=0; i--) {
+                const wolf = wolves[i];
+                // 15秒后消失
+                if (now - wolf.bornTime > CONFIG.WOLF_LIFETIME) {
+                    spawnParticles(wolf.x+CONFIG.WOLF_SIZE/2, wolf.y+CONFIG.WOLF_SIZE/2, '#666');
+                    wolves.splice(i,1); wolvesCount--; continue;
+                }
+                // 重力
+                wolf.dy += CONFIG.GRAVITY;
+                // 移动
+                wolf.x += wolf.dx; wolf.y += wolf.dy;
+                // 碰地面（弹跳）
+                if (wolf.y + CONFIG.WOLF_SIZE >= h) {
+                    wolf.y = h - CONFIG.WOLF_SIZE;
+                    if (wolf.dy > 0) {
+                        wolf.dy = -random(CONFIG.MIN_BOUNCE_Y, CONFIG.MAX_BOUNCE_Y);
+                        wolf.dx = (Math.random()>0.5?1:-1)*random(CONFIG.MIN_DX, CONFIG.MAX_DX);
+                        spawnParticles(wolf.x+CONFIG.WOLF_SIZE/2, h, '#8B4513');
+                    }
+                }
+                // 碰天花板
+                if (wolf.y <=0) { wolf.y=0; wolf.dy=Math.abs(wolf.dy)*0.7; }
+                // 碰左右墙
+                if (wolf.x<=0) { wolf.x=0; wolf.dx=Math.abs(wolf.dx); }
+                if (wolf.x+CONFIG.WOLF_SIZE>=w) { wolf.x=w-CONFIG.WOLF_SIZE; wolf.dx=-Math.abs(wolf.dx); }
+                // 狼撞狼
+                for (let j=i+1; j<wolves.length; j++) {
+                    const other = wolves[j];
+                    if (isCollide(wolf,other,CONFIG.WOLF_SIZE,CONFIG.WOLF_SIZE)) {
+                        [wolf.type, other.type] = [other.type, wolf.type];
+                        [wolf.dx, other.dx] = [other.dx, wolf.dx];
+                        [wolf.dy, other.dy] = [other.dy, wolf.dy];
+                        spawnParticles(wolf.x+CONFIG.WOLF_SIZE/2, wolf.y+CONFIG.WOLF_SIZE/2, '#FF4500');
+                    }
+                }
+            }
+            // 狼吃骨头
+            for (let i=wolves.length-1; i>=0; i--) {
+                const wolf = wolves[i];
+                for (let j=bones.length-1; j>=0; j--) {
+                    const bone = bones[j];
+                    if (isCollide(wolf,bone,CONFIG.WOLF_SIZE,CONFIG.BONE_SIZE)) {
+                        spawnParticles(bone.x+CONFIG.BONE_SIZE/2, bone.y+CONFIG.BONE_SIZE/2, '#FFD700');
+                        bones.splice(j,1); bonesCount--;
+                    }
+                }
+            }
+        };
+
+        // 绘制实体
+        const drawEntities = (ctx) => {
+            // 画骨头
+            bones.forEach(bone => {
+                ctx.font = `${CONFIG.BONE_SIZE}px serif`;
+                ctx.textAlign='center'; ctx.textBaseline='middle';
+                ctx.fillText(CONFIG.BONE_EMOJI, bone.x+CONFIG.BONE_SIZE/2, bone.y+CONFIG.BONE_SIZE/2);
+            });
+            // 画狼
+            wolves.forEach(wolf => {
+                const emoji = wolf.type==='wolf'?CONFIG.WOLF_EMOJI:CONFIG.DOG_EMOJI;
+                ctx.font = `${CONFIG.WOLF_SIZE}px serif`;
+                ctx.textAlign='center'; ctx.textBaseline='middle';
+                ctx.fillText(emoji, wolf.x+CONFIG.WOLF_SIZE/2, wolf.y+CONFIG.WOLF_SIZE/2);
+            });
+        };
+
+        // ==================== 游戏初始化 ====================
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+
+        // 适配屏幕
+        const resize = () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // 点击/触摸生成狼
+        const handleTap = (x,y) => createWolf(x,y);
+        canvas.addEventListener('touchend', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            handleTap(e.changedTouches[0].clientX-rect.left, e.changedTouches[0].clientY-rect.top);
+        });
+        canvas.addEventListener('click', e => {
+            const rect = canvas.getBoundingClientRect();
+            handleTap(e.clientX-rect.left, e.clientY-rect.top);
+        });
+
+        // 游戏循环
+        let lastTime = performance.now();
+        const loop = () => {
+            const now = performance.now();
+            const dt = (now-lastTime)/1000;
+            lastTime = now;
+
+            // 自动生成骨头
+            autoSpawnBone(canvas.width, canvas.height, now);
+            // 更新逻辑
+            updateEntities(canvas.width, canvas.height, dt, now);
+            updateParticles(dt);
+            // 绘制
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0,0,canvas.width,canvas.height);
+            drawEntities(ctx);
+            drawParticles(ctx);
+            // 更新分数
+            scoreEl.textContent = `狼群：${wolvesCount} | 骨头：${bonesCount}`;
+
+            requestAnimationFrame(loop);
+        };
+
+        // 启动
+        loop();
+        console.log('🐺 狼族传说启动成功！点屏幕召唤狼群~');
+    </script>
 </body>
 </html>
