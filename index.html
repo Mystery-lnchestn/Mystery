@@ -2,28 +2,56 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <!-- 禁止缩放，防止 Safari 地址栏抖动 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>狼族传说 🐺</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #0a0a0a; overflow: hidden; touch-action: none; }
-        canvas { display: block; background: #0a0a0a; }
-        /* 分数显示在左上角 */
-        #score {
-            position: fixed; top: 15px; left: 15px;
-            color: #ffd700; font-size: 20px; font-weight: bold;
-            text-shadow: 0 0 5px #ffd700; z-index: 10;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* 防止长按出现菜单 */
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        body {
+            background: #0a0a0a;
+            overflow: hidden; /* 禁止滚动条 */
+            touch-action: none; /* 禁止触摸滚动 */
+        }
+        canvas {
+            display: block; /* 去除底部白边 */
+            background: #0a0a0a;
+        }
+        /* 左上角分数面板 */
+        #scorePanel {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            color: #ffd700;
+            font-size: 18px;
+            font-weight: bold;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+            z-index: 100;
+            pointer-events: none; /* 让点击穿透到canvas */
         }
     </style>
 </head>
 <body>
-    <div id="score">狼群数量：0 | 骨头：0</div>
+    <div id="scorePanel">狼群：0 | 骨头：0</div>
     <canvas id="game"></canvas>
 
-    <!-- 按顺序引入，别乱 -->
-    <script src="config.js?v=1"></script>
-    <script src="utils.js?v=1"></script>
-    <script src="entities.js?v=1"></script>
-    <script src="game.js?v=1"></script>
+    <!-- 
+        🚨 重点来了：type="module"
+        因为你的代码里用了 import/export，
+        必须加这个属性，否则 JS 不会执行！
+        另外加了 ?v=4 防止 iPad 缓存。
+    -->
+    <script type="module" src="config.js?v=4"></script>
+    <script type="module" src="utils.js?v=4"></script>
+    <script type="module" src="entities.js?v=4"></script>
+    <script type="module" src="game.js?v=4"></script>
 </body>
 </html>
