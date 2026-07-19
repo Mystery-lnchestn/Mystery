@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>狼族传说 🐺</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; overflow: hidden; touch-action: none; }
+        canvas { display: block; background: #0a0a0a; }
+        /* 分数显示在左上角 */
+        #score {
+            position: fixed; top: 15px; left: 15px;
+            color: #ffd700; font-size: 20px; font-weight: bold;
+            text-shadow: 0 0 5px #ffd700; z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">狼群数量：0 | 骨头：0</div>
+    <canvas id="game"></canvas>
+
+    <!-- 按顺序引入，别乱 -->
+    <script src="config.js?v=1"></script>
+    <script src="utils.js?v=1"></script>
+    <script src="entities.js?v=1"></script>
+    <script src="game.js?v=1"></script>
+</body>
+</html>
